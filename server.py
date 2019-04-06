@@ -1,5 +1,8 @@
 # encoding: utf-8
 
+import getpass
+import logging
+import platform
 import select
 import socket
 import struct
@@ -8,7 +11,6 @@ from socketserver import TCPServer
 from socketserver import StreamRequestHandler
 
 import constants
-import log
 
 
 class ThreadingTCPServer(ThreadingMixIn, TCPServer):
@@ -20,58 +22,67 @@ class SocksProxy(StreamRequestHandler):
     password = 'password'
 
     def handle(self):
-        log.info('Accepting connection from %s:%s' % self.client_address)
+        logging.info('Accepting connection from %s:%s' % self.client_address)
 
         # greeting header
         # read and unpack 2 bytes from a client, sample: b'\x05\x01'
         header = self.connection.recv(constants.RECEIVE_HEADER_LENGTH)
         version, nmethods = struct.unpack("!BB", header)
-        log.info("socket version: %s, nmethods:%s" % (version, nmethods))
+        logging.info("socket version: %s, nmethods:%s" % (version, nmethods))
         # if not socks 5 raise exception
         assert version == constants.SOCKS_VERSION
         # if length of request < 1 raise exception
         assert nmethods > 0
         # get available methods
         methods = self.get_available_methods(nmethods)
-        log.info("get_available_methods: %s" % methods)
+        logging.info("get_available_methods: %s" % methods)
 
         # accept only USERNAME/PASSWORD auth
-        if 2 not in set(methods):
+        if constants.REQUEST_WITH_AUTH not in set(methods):
             # close connection
             self.server.close_request(self.request)
             return
 
         # send welcome message
-        self.connection.sendall(struct.pack(
-            "!BB", constants.SOCKS_VERSION, constants.RESPONSE_FOR_AUTH))
-        log.debug("send request successfully message.")
+        welcome_bytes = struct.pack(
+            "!BB", constants.SOCKS_VERSION, constants.RESPONSE_FOR_AUTH)
+        self.connection.sendall(welcome_bytes)
+        logging.debug("send welcome message ends.")
 
         if not self.verify_credentials():
-            log.error("verify_credentials failed!")
+            logging.error("verify_credentials failed!")
             return
 
-        # request
+        # client connect request
+        # b'\x05\x01\x00\x03'
         version, cmd, _, address_type = struct.unpack(
             "!BBBB", self.connection.recv(4))
         assert version == constants.SOCKS_VERSION
 
-        if address_type == 1:  # IPv4
-            address = socket.inet_ntoa(self.connection.recv(4))
-        elif address_type == 3:  # Domain name
-            doamin_name = self.connection.recv(1)
-            log.debug("doamin_name:%s" % doamin_name)
-            domain_length = doamin_name[0]
-            address = self.connection.recv(domain_length)
-
-        port = struct.unpack('!H', self.connection.recv(2))[0]
+        # IPv4
+        if address_type == constants.ATYP_IP:
+            request_address = socket.inet_ntoa(self.connection.recv(4))
+        # Domain name
+        elif address_type == 3:
+            domain_length = ord(self.connection.recv(1))
+            request_address = self.connection.recv(domain_length)
+            logging.debug("request_address:%s" % request_address)
+        else:
+            # for ipv6
+            logging.error("not support ipv6 now")
+            return
+        # (443,)
+        request_port = struct.unpack('!H', self.connection.recv(2))[0]
 
         # reply
         try:
-            if cmd == 1:  # CONNECT
+            # CONNECT
+            if cmd == 1:
                 remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                remote.connect((address, port))
+                remote.connect((request_address, request_port))
                 bind_address = remote.getsockname()
-                log.info('Connected to %s %s' % (address, port))
+                logging.info('Connected to %s %s, bind_address: %s' %
+                             (request_address, request_port, bind_address))
             else:
                 self.server.close_request(self.request)
 
@@ -81,7 +92,7 @@ class SocksProxy(StreamRequestHandler):
                                 0, 0, address_type, addr, port)
 
         except Exception as err:
-            log.error(err)
+            logging.error(err)
             # return connection refused error
             reply = self.generate_failed_reply(address_type, 5)
 
@@ -101,26 +112,27 @@ class SocksProxy(StreamRequestHandler):
 
     def verify_credentials(self):
         version = ord(self.connection.recv(1))
-        log.debug("get_version:%s" % version)
+        logging.debug("get_version:%s" % version)
         assert version == constants.RESPONSE_FOR_AUTH_VERSION
 
         username_len = ord(self.connection.recv(1))
         username = self.connection.recv(username_len).decode("utf-8")
-        log.debug("for debug. username_len:%s, username:%s" %
-                  (username_len, username))
+        logging.debug("for debug. username_len:%s, username:%s" %
+                      (username_len, username))
         password_len = ord(self.connection.recv(1))
         password = self.connection.recv(password_len).decode('utf-8')
-        log.debug("for debug. password_len:%s, password:%s" %
-                  (password_len, password))
+        logging.debug("for debug. password_len:%s, password:%s" %
+                      (password_len, password))
 
         if username == self.username and password == self.password:
-            # success, status = 0
-            response = struct.pack("!BB", version, 0)
-            self.connection.sendall(response)
+            # auth success, status = 0
+            auth_success_bytes = struct.pack(
+                "!BB", version, constants.AUTH_SUCCESS)
+            self.connection.sendall(auth_success_bytes)
             return True
 
         # failure, status != 0
-        response = struct.pack("!BB", version, 0xFF)
+        response = struct.pack("!BB", version, constants.AUTH_FAIL)
         self.connection.sendall(response)
         self.server.close_request(self.request)
         return False
@@ -147,6 +159,29 @@ class SocksProxy(StreamRequestHandler):
                     break
 
 
+class Logger(object):
+
+    def init(self):
+        windows_log_path = "C:\\Users\\%s\\Desktop\\socks_proxy.log"
+        linux_log_path = "/var/log/socks_proxy.log"
+        run_platform = platform.platform()
+        if run_platform.startswith("Windows"):
+            user = getpass.getuser()
+            log_path = windows_log_path % user
+        else:
+            log_path = linux_log_path
+
+        log_format = '[%(asctime)s %(filename)s:%(lineno)d' \
+                     ' %(funcName)s] [PID:%(thread)d] ' \
+                     '[%(threadName)s] [%(levelname)s] %(message)s'
+        date_format = '%Y-%m-%dT%H:%M:%S'
+        logging.basicConfig(level=logging.DEBUG,
+                            format=log_format,
+                            datefmt=date_format,
+                            filename=log_path)
+
+
 if __name__ == '__main__':
+    Logger().init()
     with ThreadingTCPServer(('', 8080), SocksProxy) as server:
         server.serve_forever()
