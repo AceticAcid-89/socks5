@@ -177,13 +177,13 @@ class SocksProxy(StreamRequestHandler):
 
             if client in r:
                 logging.debug("client: %s for reading" % client)
-                data = client.recv(4096)
+                data = client.recv(constants.MAX_RECEIVE_BYTES)
                 if remote.send(data) <= 0:
                     break
 
             if remote in r:
                 logging.debug("remote: %s for reading" % remote)
-                data = remote.recv(4096)
+                data = remote.recv(constants.MAX_RECEIVE_BYTES)
                 if client.send(data) <= 0:
                     break
 
