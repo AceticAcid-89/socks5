@@ -16,8 +16,8 @@ class ThreadingTCPServer(ThreadingMixIn, TCPServer):
 
 
 class SocksProxy(StreamRequestHandler):
-    username = 'stunnerlw'
-    password = 'oliver9972'
+    username = 'username'
+    password = 'password'
 
     def handle(self):
         log.info('Accepting connection from %s:%s' % self.client_address)
@@ -77,8 +77,8 @@ class SocksProxy(StreamRequestHandler):
 
             addr = struct.unpack("!I", socket.inet_aton(bind_address[0]))[0]
             port = bind_address[1]
-            reply = struct.pack("!BBBBIH", constants.SOCKS_VERSION, 0, 0, address_type,
-                                addr, port)
+            reply = struct.pack("!BBBBIH", constants.SOCKS_VERSION,
+                                0, 0, address_type, addr, port)
 
         except Exception as err:
             log.error(err)
