@@ -63,21 +63,24 @@ class SocksProxy(StreamRequestHandler):
         if address_type == constants.ATYP_IP:
             request_address = socket.inet_ntoa(self.connection.recv(4))
         # Domain name
-        elif address_type == 3:
+        elif address_type == constants.ATYP_DOMAIN:
             domain_length = ord(self.connection.recv(1))
             request_address = self.connection.recv(domain_length)
             logging.debug("request_address:%s" % request_address)
         else:
             # for ipv6
             logging.error("not support ipv6 now")
+            self.server.close_request(self.request)
             return
         # (443,)
         request_port = struct.unpack('!H', self.connection.recv(2))[0]
+        logging.debug("request_port:%s" % request_port)
 
         # reply
+        remote = None
         try:
             # CONNECT
-            if cmd == 1:
+            if cmd == constants.CMD_CONNECT:
                 remote = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 remote.connect((request_address, request_port))
                 bind_address = remote.getsockname()
@@ -85,21 +88,26 @@ class SocksProxy(StreamRequestHandler):
                              (request_address, request_port, bind_address))
             else:
                 self.server.close_request(self.request)
+                return
 
-            addr = struct.unpack("!I", socket.inet_aton(bind_address[0]))[0]
-            port = bind_address[1]
+            bind_ip_32 = struct.unpack("!I",
+                                       socket.inet_aton(bind_address[0]))[0]
+            bind_port = bind_address[1]
             reply = struct.pack("!BBBBIH", constants.SOCKS_VERSION,
-                                0, 0, address_type, addr, port)
+                                constants.RESPONSE_SUCCESS, constants.RSV,
+                                address_type, bind_ip_32, bind_port)
 
         except Exception as err:
             logging.error(err)
             # return connection refused error
-            reply = self.generate_failed_reply(address_type, 5)
+            reply = self.generate_failed_reply(
+                address_type, constants.REQUEST_REFUSED)
 
         self.connection.sendall(reply)
 
         # establish data exchange
-        if reply[1] == 0 and cmd == 1:
+        if reply[1] == constants.RESPONSE_SUCCESS and \
+                cmd == constants.CMD_CONNECT:
             self.exchange_loop(self.connection, remote)
 
         self.server.close_request(self.request)
@@ -161,7 +169,8 @@ class SocksProxy(StreamRequestHandler):
 
 class Logger(object):
 
-    def init(self):
+    @staticmethod
+    def init():
         windows_log_path = "C:\\Users\\%s\\Desktop\\socks_proxy.log"
         linux_log_path = "/var/log/socks_proxy.log"
         run_platform = platform.platform()
@@ -182,6 +191,6 @@ class Logger(object):
 
 
 if __name__ == '__main__':
-    Logger().init()
+    Logger.init()
     with ThreadingTCPServer(('', 8080), SocksProxy) as server:
         server.serve_forever()
