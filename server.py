@@ -1,5 +1,6 @@
 # encoding: utf-8
 
+import argparse
 import getpass
 import logging
 import platform
@@ -11,6 +12,17 @@ from socketserver import TCPServer
 from socketserver import StreamRequestHandler
 
 import constants
+
+
+parser = argparse.ArgumentParser()
+parser.add_argument("-ip", action="store", type=str,
+                    help="ip for proxy-server", dest="proxy_ip")
+parser.add_argument("-port", action="store", type=int,
+                    help="port for proxy server", dest="proxy_port")
+args = parser.parse_args()
+
+proxy_ip = args.proxy_ip
+proxy_port = args.proxy_port
 
 
 class ThreadingTCPServer(ThreadingMixIn, TCPServer):
@@ -194,5 +206,6 @@ class Logger(object):
 
 if __name__ == '__main__':
     Logger.init()
-    with ThreadingTCPServer(('', 8080), SocksProxy) as server:
+    with ThreadingTCPServer(
+            (proxy_ip, proxy_port), SocksProxy) as server:
         server.serve_forever()
