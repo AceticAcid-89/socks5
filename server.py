@@ -145,11 +145,13 @@ class SocksProxy(StreamRequestHandler):
         self.server.close_request(self.request)
         return False
 
-    def generate_failed_reply(self, address_type, error_number):
+    @staticmethod
+    def generate_failed_reply(address_type, error_number):
         return struct.pack("!BBBBIH", constants.SOCKS_VERSION, error_number,
                            0, address_type, 0, 0)
 
-    def exchange_loop(self, client, remote):
+    @staticmethod
+    def exchange_loop(client, remote):
 
         while True:
 
