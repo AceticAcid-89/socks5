@@ -16,10 +16,14 @@ import constants
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument("-ip", action="store", type=str,
+parser.add_argument("-ip", "-i", action="store", type=str, required=True,
                     help="ip for proxy-server", dest="proxy_ip")
-parser.add_argument("-port", action="store", type=int,
+parser.add_argument("-port", "-p", action="store", type=int, required=True,
                     help="port for proxy server", dest="proxy_port")
+parser.add_argument("-user", "-u", action="store", type=str, required=True,
+                    help="username for proxy server", dest="username")
+parser.add_argument("-pwd", "-w", action="store", type=str, required=True,
+                    help="password for proxy server", dest="password")
 args = parser.parse_args()
 
 proxy_ip = args.proxy_ip
@@ -31,8 +35,8 @@ class ThreadingTCPServer(ThreadingMixIn, TCPServer):
 
 
 class SocksProxy(StreamRequestHandler):
-    username = 'username'
-    password = 'password'
+    username = args.username
+    password = args.password
 
     def handle(self):
         logging.info('Accepting connection from %s:%s' % self.client_address)
