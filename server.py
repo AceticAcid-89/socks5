@@ -10,6 +10,7 @@ import struct
 from socketserver import ThreadingMixIn
 from socketserver import TCPServer
 from socketserver import StreamRequestHandler
+import traceback
 
 import constants
 
@@ -102,8 +103,8 @@ class SocksProxy(StreamRequestHandler):
                 self.server.close_request(self.request)
                 return
 
-            bind_ip_32 = struct.unpack("!I",
-                                       socket.inet_aton(bind_address[0]))[0]
+            bind_ip_32 = struct.unpack(
+                "!I", socket.inet_aton(bind_address[0]))[0]
             bind_port = bind_address[1]
             reply = struct.pack("!BBBBIH", constants.SOCKS_VERSION,
                                 constants.RESPONSE_SUCCESS, constants.RSV,
@@ -120,7 +121,11 @@ class SocksProxy(StreamRequestHandler):
         # establish data exchange
         if reply[1] == constants.RESPONSE_SUCCESS and \
                 cmd == constants.CMD_CONNECT:
-            self.exchange_loop(self.connection, remote)
+            try:
+                self.exchange_loop(self.connection, remote)
+            except Exception:
+                logging.error("exchange_loop failed! traceback:%s" %
+                              traceback.format_exc())
 
         self.server.close_request(self.request)
 
@@ -164,18 +169,20 @@ class SocksProxy(StreamRequestHandler):
 
     @staticmethod
     def exchange_loop(client, remote):
-
+        logging.info("enter in exchange_loop")
         while True:
 
             # wait until client or remote is available for read
             r, w, e = select.select([client, remote], [], [])
 
             if client in r:
+                logging.debug("client: %s for reading" % client)
                 data = client.recv(4096)
                 if remote.send(data) <= 0:
                     break
 
             if remote in r:
+                logging.debug("remote: %s for reading" % remote)
                 data = remote.recv(4096)
                 if client.send(data) <= 0:
                     break
