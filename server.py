@@ -105,6 +105,7 @@ class SocksProxy(StreamRequestHandler):
                              (request_address, request_port, bind_address))
             else:
                 self.server.close_request(self.request)
+                logging.error("only support connection type of CONNECT, request is %s" % cmd)
                 return
 
             bind_ip_32 = struct.unpack(
@@ -164,6 +165,7 @@ class SocksProxy(StreamRequestHandler):
         response = struct.pack("!BB", version, constants.AUTH_FAIL)
         self.connection.sendall(response)
         self.server.close_request(self.request)
+        logging.error("verify_credentials fails, close request!")
         return False
 
     @staticmethod
